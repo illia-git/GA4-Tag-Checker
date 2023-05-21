@@ -32,7 +32,3 @@ The code includes error handling for common scenarios such as "ERR_TOO_MANY_REDI
   - "pagesWithTagTDA": Object containing pages with the GA4 snippet and the keyword "TDA".
   - "errors": Array storing any encountered errors during the process.
 
-## License
-
-This project is licensed under the [MIT License](LICENSE).
-
