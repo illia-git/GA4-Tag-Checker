@@ -1,34 +1,42 @@
 # GA4 Tag Checker
 
-This code was created during my contract at Accenture for the Inner project. The purpose of this code is to test 15 BMW market pages for the presence of the GA4 (Google Analytics 4) snippet. It retrieves the links from the main domain, opens each link in a new tab, waits for the page to load, checks for the presence of the GA4 snippet, and stores the results in the "gaReport" object.
+This code was created during my contract at Accenture for the Inner project. The purpose of this code is to test 15 BMW market pages for the presence of the GA4 (Google Analytics 4) snippet.
 
-## Instructions
+## Overview
 
-1. Add the code snippet to your JavaScript file or browser console.
-2. Open the website where you want to test the GA4 snippet.
-3. The code will automatically retrieve the links from the main domain and check the presence of the GA4 snippet on each page.
-4. After processing all pages, the results will be stored in the "gaReport" object, which can be accessed in the browser's Session Storage.
+This script is designed to check for the presence of the GA4 script on a set of web pages within a domain. It does this by opening each page and checking for the presence of the GA4 script or the `gtag` function.
 
-## Usage
+## Features
 
-1. Copy the code from the code snippet provided.
-2. Paste the code into your JavaScript file or directly into the browser console.
-3. Open the website you want to test.
-4. Wait for the code to finish processing all pages.
-5. Access the results by retrieving the "gaReport" object from the browser's Session Storage.
+- Extracts all internal links from the current page.
+- Filters out links with specific blacklisted keywords.
+- Processes pages in batches to avoid overwhelming the browser.
+- Checks for the presence of the GA4 script or the `gtag` function on each page.
+- Generates a report detailing which pages have the GA4 tag, which don't, and any errors encountered.
+- Stores the report in the browser's Session Storage.
 
-## Error Handling
+## Configuration
 
-The code includes error handling for common scenarios such as "ERR_TOO_MANY_REDIRECTS" and exceptions during page processing. Any errors encountered during the process will be stored in the "gaReport.errors" array, allowing you to identify and handle any issues that may arise.
+The script contains a `CONFIG` object which allows for customization:
 
-## Notes
+- `MAX_CONCURRENT_TABS`: Maximum number of tabs to open concurrently.
+- `MAX_CHECKS`: Maximum number of checks to perform on a page before giving up.
+- `CHECK_INTERVAL`: Time interval (in milliseconds) between checks.
+- `BLACKLIST_KEYWORDS`: List of keywords that, if present in a URL, will exclude the URL from being checked.
 
-- The code excludes pages containing the keyword "hybrides-rechargeables" from the "allPages" array and future checks.
-- The results are stored in the "gaReport" object, which includes the following properties:
-  - "allPages": Object containing all the processed pages.
-  - "pagesWithTag": Object containing pages with the GA4 snippet.
-  - "pagesNoTag": Object containing pages without the GA4 snippet.
-  - "pagesWithTagRFO": Object containing pages with the GA4 snippet and the keyword "RFO".
-  - "pagesWithTagTDA": Object containing pages with the GA4 snippet and the keyword "TDA".
-  - "errors": Array storing any encountered errors during the process.
+## How to Use
 
+1. Navigate to the root page of the domain you want to check.
+2. Open the browser's developer console.
+3. Paste and run the provided script.
+4. Wait for the script to process all pages and generate a report.
+5. The report will be logged to the console and stored in Session Storage under the key `gaReport`.
+
+## Note
+
+- The script uses both the `window.open` method and the `chrome.tabs` API. The latter is specific to the Chrome browser and its extensions. Ensure you're running the script in an environment that supports the used methods.
+- Ensure pop-ups are allowed for the domain you're checking, as the script may open multiple tabs.
+
+## Disclaimer
+
+Use this script responsibly. Opening too many tabs concurrently can overwhelm the browser and the server hosting the web pages. Adjust the `CONFIG` values as needed to suit your environment.
