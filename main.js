@@ -1,107 +1,121 @@
-// Get the current domain
 const domain = window.location.hostname;
 
-// Fetch all the anchor tags on the page
-const links = Array.from(document.getElementsByTagName('a'));
+const links = [...document.querySelectorAll(`a[href*="${domain}"]`)];
+const uniquePageUrls = new Set(links.map((link) => link.href.split('?')[0]));
 
-// Filter links to include only the main domain
-const mainDomainLinks = links.filter((link) => {
-  const href = link.getAttribute('href');
-  return href && href.indexOf(domain) !== -1;
-});
+const CONFIG = {
+  MAX_CONCURRENT_TABS: 5,
+  MAX_CHECKS: 5,
+  CHECK_INTERVAL: 2000,
+  BLACKLIST_KEYWORDS: ['hybrides-rechargeables'],
+};
 
-// Extract unique page URLs from main domain links using a Set
-const pagesSet = new Set(mainDomainLinks.map((link) => link.href.split('?')[0]));
+const hasGA4Script = (content) =>
+  /<script[^>]*src="[^"]*gtag\.js[^>"]*"><\/script>/.test(content);
 
-// Convert Set to an array of pages
-const pages = Array.from(pagesSet);
-
-// Function to open a new tab and check for GA4 snippet
 const checkGA4 = async (url) => {
   return new Promise((resolve) => {
-    const tab = window.open(url, '_blank');
+    let tab;
+    let checks = 0;
 
-    tab.addEventListener('load', () => {
-      setTimeout(() => {
-        const hasGA4 = Boolean(tab.window.gtag);
+    const checkForGTag = () => {
+      checks++;
+      const hasGA4 =
+        Boolean(tab.window.gtag) ||
+        hasGA4Script(tab.document.documentElement.innerHTML);
+      if (hasGA4 || checks >= CONFIG.MAX_CHECKS) {
         tab.close();
         resolve({ url, hasGA4 });
-      }, 1000);
-    });
-
-    tab.addEventListener('error', (event) => {
-      if (event.target.location.href === url && event.target.status === 0) {
-        resolve({ url, error: 'ERR_TOO_MANY_REDIRECTS' });
+      } else {
+        setTimeout(checkForGTag, CONFIG.CHECK_INTERVAL);
       }
-    });
+    };
+
+    const onError = (event) => {
+      tab.close();
+      const errorType =
+        event.target.location.href === url && event.target.status === 0
+          ? 'ERR_TOO_MANY_REDIRECTS'
+          : 'Unknown error';
+      resolve({ url, error: errorType });
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.create({ url, active: false }, (newTab) => {
+        const tabId = newTab.id;
+        chrome.tabs.onUpdated.addListener((updatedTabId, changeInfo) => {
+          if (updatedTabId === tabId && changeInfo.status === 'complete') {
+            setTimeout(checkForGTag, CONFIG.CHECK_INTERVAL);
+          }
+        });
+      });
+    } else {
+      tab = window.open(url, '_blank');
+      tab.addEventListener('load', () =>
+        setTimeout(checkForGTag, CONFIG.CHECK_INTERVAL),
+      );
+      tab.addEventListener('error', onError);
+    }
   });
 };
 
-// Process each page sequentially and store GA4 presence report
+const processPagesInBatches = async (remainingPages, gaReport) => {
+  if (!remainingPages.size) return gaReport;
+
+  const batch = [];
+  for (let url of remainingPages) {
+    if (batch.length >= CONFIG.MAX_CONCURRENT_TABS) break;
+    if (!CONFIG.BLACKLIST_KEYWORDS.some((keyword) => url.includes(keyword))) {
+      batch.push(url);
+      remainingPages.delete(url);
+    }
+  }
+
+  const results = await Promise.all(batch.map(checkGA4));
+
+  results.forEach((result) => {
+    const { url, hasGA4, error } = result;
+    gaReport.allPages.push(url);
+
+    if (hasGA4) {
+      gaReport.pagesWithTag.push(url);
+      if (url.includes('tda')) gaReport.pagesWithTagTDA.push(url);
+      if (url.includes('rfo') && !url.includes('performance'))
+        gaReport.pagesWithTagRFO.push(url);
+    } else if (error) {
+      gaReport.errors.push(`Error processing page "${url}": ${error}`);
+    } else {
+      gaReport.pagesNoTag.push(url);
+    }
+  });
+
+  return processPagesInBatches(remainingPages, gaReport);
+};
+
 const processPages = async (pages) => {
   const gaReport = {
-    allPages: {},
-    pagesWithTag: {},
-    pagesNoTag: {},
-    pagesWithTagRFO: {},
-    pagesWithTagTDA: {},
+    allPages: [],
+    pagesWithTag: [],
+    pagesNoTag: [],
+    pagesWithTagRFO: [],
+    pagesWithTagTDA: [],
     errors: [],
   };
 
-  const blacklistKeyword = 'hybrides-rechargeables'; // Blacklist keyword
+  await processPagesInBatches(pages, gaReport);
 
-  let pageIndex = 1;
-
-  async function processNextPage() {
-    if (pages.length === 0) {
-      try {
-        sessionStorage.setItem('gaReport', JSON.stringify(gaReport));
-        console.log('GA report has been stored in Session Storage.');
-      } catch (error) {
-        gaReport.errors.push(`Error storing GA report in Session Storage: ${error}`);
-      }
-      return;
-    }
-
-    const nextPage = pages.shift();
-    if (nextPage.includes(blacklistKeyword)) {
-      processNextPage();
-      return;
-    }
-
-    try {
-      const result = await checkGA4(nextPage);
-
-      gaReport.allPages[pageIndex] = nextPage;
-
-      if (result.hasGA4) {
-        gaReport.pagesWithTag[pageIndex] = nextPage;
-
-        if (nextPage.includes('tda')) {
-          gaReport.pagesWithTagTDA[pageIndex] = nextPage;
-        }
-
-        if (nextPage.includes('rfo') && !nextPage.includes('performance')) {
-          gaReport.pagesWithTagRFO[pageIndex] = nextPage;
-        }
-      } else {
-        gaReport.pagesNoTag[pageIndex] = nextPage;
-      }
-
-      pageIndex++;
-    } catch (error) {
-      if (error === 'ERR_TOO_MANY_REDIRECTS') {
-        gaReport.errors.push(`Error processing page "${nextPage}": Too many redirects.`);
-      } else {
-        gaReport.errors.push(`Error processing page "${nextPage}": ${error}`);
-      }
-    }
-
-    processNextPage();
+  try {
+    sessionStorage.setItem('gaReport', JSON.stringify(gaReport));
+    console.log('GA report has been stored in Session Storage.');
+  } catch (error) {
+    gaReport.errors.push(
+      `Error storing GA report in Session Storage: ${error}`,
+    );
   }
 
-  await processNextPage();
+  return gaReport;
 };
 
-// Start processing the pages
-processPages(pages);
+processPages(uniquePageUrls).then((report) => {
+  console.log('Finished processing all pages:', report);
+});
